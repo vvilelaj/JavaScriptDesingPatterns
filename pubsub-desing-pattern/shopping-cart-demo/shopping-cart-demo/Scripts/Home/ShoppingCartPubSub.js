@@ -1,6 +1,4 @@
 ﻿/// <reference path="../jquery-1.10.2.intellisense.js" />
-var itemsAdded = [];
-
 var utils = (function () {
     var _getFormatedPrice = function (price) {
         price = price || 0.0;
@@ -18,15 +16,15 @@ var utils = (function () {
 }());
 
 var shoppingCartResume = (function () {
-    //var _utils;
 
     var _elements = {
         totalItemsClass: '.total-items',
         totalPriceClass: '.total-price',
     };
 
-    var _init = function (params) {
-        //_utils = params.utils;
+    var _init = function () {
+        _renderTotalItemsAndTotalPrice(0, 0);
+        _bindEvents();
     };
 
     var _renderTotalItemsAndTotalPrice = function (totalItems, totalPrice) {
@@ -34,59 +32,69 @@ var shoppingCartResume = (function () {
         $(_elements.totalPriceClass).html(utils.getFormatedPrice(totalPrice));
     };
 
+    var _bindEvents = function () {
+        pubsub.sub(pubsubMessage.productsAddedChange(), function (itemsChanged) {
+            itemsChanged = itemsChanged || [];
+            var totalItems = itemsChanged.length;
+            var totalPrice = _getTotalPrice(itemsChanged);
+            _renderTotalItemsAndTotalPrice(totalItems, totalPrice);
+        });
+    };
+
+    var _getTotalPrice = function (itemsChanged) {
+        var totalPrice = 0.0;
+        for (var i = 0; i < itemsChanged.length; i++) {
+            var productAdded = itemsChanged[i];
+            totalPrice += productAdded.Price;
+        }
+        return totalPrice;
+    }
+
     return {
-        init: _init,
-        renderTotalItemsAndTotalPrice: _renderTotalItemsAndTotalPrice,
+        init: _init
     };
 }());
 
 var productAddedList = (function () {
-    //var _utils;
-
-    var _itemsAdded = _itemsAdded || [];
 
     var _elements = {
         productsAddedId: '#products-added'
     };
 
-    var _renderProductsAdded = function (itemsAdded) {
+    var _init = function () {
         $(_elements.productsAddedId).html('');
-        shoppingCartResume.renderTotalItemsAndTotalPrice(0, 0);
-        if (itemsAdded && itemsAdded.length > 0) {
-            var totalItems = itemsAdded.length;
-            var totalPrice = 0;
-            for (var i = 0; i < itemsAdded.length; i++) {
-                var productAdded = itemsAdded[i];
-                totalPrice += productAdded.Price;
-                //
-                var li = _getListItemInstance();
-                li.append(utils.getProductDescription(productAdded));
-                $(_elements.productsAddedId).append(li);
-            }
-            shoppingCartResume.renderTotalItemsAndTotalPrice(totalItems, totalPrice);
+        _bindEvents();
+    };
+
+    var _bindEvents = function () {
+        pubsub.sub(pubsubMessage.productsAddedChange(), _renderProductsAdded);
+    };
+
+    var _renderProductsAdded = function (itemsAdded) {
+        itemsAdded = itemsAdded || [];
+        //
+        $(_elements.productsAddedId).html('');
+        for (var i = 0; i < itemsAdded.length; i++) {
+            var productAdded = itemsAdded[i];
+            var li = _getListItemInstance();
+            li.append(utils.getProductDescription(productAdded));
+            $(_elements.productsAddedId).append(li);
         }
+        
     };
 
     var _getListItemInstance = function () {
         return $('<li class=\'list-group-item\'></li>').clone();
     }
 
-    var _init = function (params) {
-        //_utils = params.utils;
-        _itemsAdded = params.itemsAdded;
-        _renderProductsAdded(_itemsAdded);
-    }
-
     return {
-        init: _init,
-        renderProductsAdded: _renderProductsAdded
+        init: _init
     };
 }());
 
 var productList = (function () {
-    //var _utils;
 
-    var _itemsAdded = _itemsAdded || [];
+    var _itemsAdded = [];
 
     var _elements = {
         productsListId: '#products-list',
@@ -101,18 +109,20 @@ var productList = (function () {
         product: 'product'
     };
 
-    var _renderProductList = function (productPromiseResult) {
-        for (var i = 0; i < productPromiseResult.length; i++) {
-            var product = productPromiseResult[i];
-            //
-            var li = _getListItemInstance();
-            li.data(_dataKey.product, product);
-            li.append(_getAddButtonInstance());
-            li.append(utils.getProductDescription(product));
-            //
-            $(_elements.productsListId).append(li);
-        }
+    var _init = function () {
+        _renderProductsList();
+        _bindEvents();
     }
+
+    var _renderProductsList = function () {
+        $.when(_getProductsPromise())
+            .done(function (getProductPromiseResult) {
+                _renderGetProductPromiseResult(getProductPromiseResult);
+            })
+            .fail(function (productPromiseResult) {
+                console.log(productPromiseResult);
+            });
+    };
 
     var _getProductsPromise = function getProductsPromise() {
         var d = $.Deferred();
@@ -132,6 +142,19 @@ var productList = (function () {
         return d.promise();
     }
 
+    var _renderGetProductPromiseResult = function (productPromiseResult) {
+        for (var i = 0; i < productPromiseResult.length; i++) {
+            var product = productPromiseResult[i];
+            //
+            var li = _getListItemInstance();
+            li.data(_dataKey.product, product);
+            li.append(_getAddButtonInstance());
+            li.append(utils.getProductDescription(product));
+            //
+            $(_elements.productsListId).append(li);
+        }
+    }
+
     var _getListItemInstance = function () {
         return $('<li class=\'list-group-item\'></li>').clone();
     }
@@ -144,19 +167,23 @@ var productList = (function () {
         return $(strButton).clone();
     }
 
+    var _bindEvents = function () {
+        $('ul').on('click', _elements.btnAddProductClass, _btnAddProduct_onClick);
+    }
+
     var _btnAddProduct_onClick = function (e) {
         var $btn = $(this);
         $btn.attr('disabled', 'disabled')
         var product = $btn.parent('li').data(_dataKey.product);
-        var productExists = _getProductExists(itemsAdded, product);
+        var productExists = _getProductExists(_itemsAdded, product);
         if (_isAddButton($btn) && !productExists) {
-            itemsAdded.push(product);
-            productAddedList.renderProductsAdded(itemsAdded);
+            _itemsAdded.push(product);
+            pubsub.pub(pubsubMessage.productsAddedChange(), _itemsAdded);
             _changeButtonIcon($btn);
         }
         if (!_isAddButton($btn) && productExists) {
-            itemsAdded = _removeProduct(itemsAdded, product.ProductId);
-            productAddedList.renderProductsAdded(itemsAdded);
+            _itemsAdded = _removeProduct(_itemsAdded, product.ProductId);
+            pubsub.pub(pubsubMessage.productsAddedChange(), _itemsAdded);
             _changeButtonIcon($btn);
         }
         $btn.removeAttr('disabled');
@@ -201,42 +228,53 @@ var productList = (function () {
         return tmp;
     }
 
-    var _bindEvents = function () {
-        $('ul').on('click', _elements.btnAddProductClass, _btnAddProduct_onClick);
-    }
-
-    var _init = function (params) {
-        //_utils = params.utils;
-        _itemsAdded = params.itemsAdded;
-
-        _bindEvents();
-
-        $.when(_getProductsPromise())
-            .done(function (productPromiseResult) {
-                _renderProductList(productPromiseResult);
-            })
-            .fail(function (productPromiseResult) {
-                console.log(productPromiseResult);
-            });
-    }
 
     return {
         init: _init
     };
 }());
 
+var pubsub = (function () {
+
+    var _channels = {};
+
+    var _pub = function (message) {
+        var args = [].slice.call(arguments, 1);
+        if (!_channels[message]) {
+            _channels[message] = [];
+        }
+
+        for (var i = 0; i < _channels[message].length; i++) {
+            var fn = _channels[message][i];
+            fn.apply(null, args);
+        }
+    };
+
+    var _sub = function (message, fn) {
+        if (!_channels[message]) {
+            _channels[message] = [];
+        }
+        _channels[message].push(fn);
+    };
+
+    return {
+        pub: _pub,
+        sub: _sub
+    }
+}());
+
+var pubsubMessage = (function () {
+    return {
+        productsAddedChange: function () {
+            return 'products-added-change'
+        }
+    }
+}());
+
 $(document).ready(function () {
-    shoppingCartResume.init({
-        //utils: utils
-    });
-    productAddedList.init({
-        //utils: utils,
-        itemsAdded: itemsAdded
-    });
-    productList.init({
-        //utils: utils,
-        itemsAdded: itemsAdded
-    });
+    shoppingCartResume.init();
+    productAddedList.init();
+    productList.init();
 });
 
 
